@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: default
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+      - name: user-service
+        image: ms-user:latest
+        imagePullPolicy: Never # Si vous utilisez Docker Desktop K8s
+        ports:
+        - containerPort: 8082
+        env:
+        - name: SPRING_R2DBC_URL
+          value: r2dbc:mysql://mysql-service:3306/userweb_db
+        - name: SPRING_RABBITMQ_HOST
+          value: rabbitmq-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+spec:
+  selector:
+    app: user-service
+  ports:
+    - protocol: TCP
+      port: 8082
+      targetPort: 8082
+  type: ClusterIP

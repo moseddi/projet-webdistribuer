@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # 1. Serveur Eureka (Annuaire)
+  discovery-service:
+    build: ./discovery-service
+    image: fatmasboui/discovery-service:1.0
+    container_name: discovery-service
+    ports:
+      - "8762:8762"
+    networks:
+      - userweb-network
+
+  # 2. Serveur de Configuration
+  config-service:
+    build: ./config-service
+    image: fatmasboui/config-service:1.0
+    container_name: config-service
+    ports:
+      - "8888:8888"
+    depends_on:
+      - discovery-service
+    networks:
+      - userweb-network
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8762/eureka/
+
+  # 3. Micro-service User
+  user-service:
+    build: ./user-service
+    image: fatmasboui/user-service-demo:1.0
+    container_name: user-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - discovery-service
+      - config-service
+    networks:
+      - userweb-network
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8762/eureka/
+      - SPRING_CLOUD_CONFIG_URI=http://config-service:8888
+
+  # 4. Gateway (Passerelle)
+  gateway-service:
+    build: ./gateway-service
+    image: fatmasboui/gateway-service:1.0
+    container_name: gateway-service
+    ports:
+      - "8887:8887"
+    depends_on:
+      - discovery-service
+      - config-service
+    networks:
+      - userweb-network
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8762/eureka/
+      - SPRING_CLOUD_CONFIG_URI=http://config-service:8888
+
+networks:
+  userweb-network:
+    driver: bridge

@@ -1,0 +1,13 @@
+target/
+*.class
+.idea/
+*.iml
+.DS_Store
+*.log
+.settings/
+.project
+.classpath
+bin/
+node_modules/
+dist/
+.angular/

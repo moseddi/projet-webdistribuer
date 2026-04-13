@@ -1,0 +1,15 @@
+com\example\commandeservice\config\SecurityConfig.class
+com\example\commandeservice\controller\CommandeController.class
+com\example\commandeservice\repository\CommandeRepository.class
+com\example\commandeservice\model\Commande.class
+com\example\commandeservice\exception\GlobalExceptionHandler.class
+com\example\commandeservice\dto\CommandeStatsDTO.class
+com\example\commandeservice\dto\CommandeStatsDTO$CommandeStatsDTOBuilder.class
+com\example\commandeservice\CommandeServiceApplication.class
+com\example\commandeservice\config\JwtAuthConverter.class
+com\example\commandeservice\model\Commande$CommandeBuilder.class
+com\example\commandeservice\model\StatutCommande.class
+com\example\commandeservice\service\CommandeService.class
+com\example\commandeservice\controller\CommandeStatsController.class
+com\example\commandeservice\model\ModePaiement.class
+com\example\commandeservice\service\CommandeStatsService.class

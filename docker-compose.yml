@@ -12,6 +12,15 @@ services:
       - mysql_data:/var/lib/mysql
     restart: always
 
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
   zookeeper:
     image: wurstmeister/zookeeper:latest
     container_name: zookeeper
@@ -101,5 +110,19 @@ services:
       - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI=http://host.docker.internal:6083/realms/ecommerce/protocol/openid-connect/certs
     restart: always
 
+  review-service:
+    image: mohamedseddikhafidh/review-service:latest
+    container_name: review-service
+    ports:
+      - "8085:8085"
+    depends_on:
+      - service-registry
+      - mongo
+    environment:
+      - EUREKA_URL=http://service-registry:8761/eureka/apps/review-service
+      - MONGODB_URL=mongodb://mongo:27017/
+    restart: always
+
 volumes:
   mysql_data:
+  mongo_data:

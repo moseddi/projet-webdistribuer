@@ -164,8 +164,6 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
-    networks:
-      - global-network
 
   # 3. TRAVAIL DE FATMA (User)
   user-service:

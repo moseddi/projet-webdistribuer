@@ -1,0 +1,9 @@
+data/
+**/target/
+*.log
+.idea/
+.vscode/
+*.exe
+*.msi
+*.zip
+node_modules/

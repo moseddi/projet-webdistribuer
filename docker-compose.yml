@@ -1,0 +1,217 @@
+services:
+  # ==========================================
+  # INFRASTRUCTURE COMMUNE (Base de données, Message, Sécurité)
+  # ==========================================
+  mongo:
+    image: mongo:7.0
+    container_name: mongo-global
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+
+  mysqldb:
+    image: mysql:8.0
+    container_name: mysqldb-global
+    ports:
+      - "3307:3306"
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_ROOT_HOST=%
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.1
+    container_name: keycloak-global
+    restart: always
+    command: start-dev --http-port=8080
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+      - KC_HOSTNAME_STRICT=false
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/keycloak:/opt/keycloak/data
+
+  zookeeper:
+    image: wurstmeister/zookeeper:latest
+    container_name: zookeeper-global
+    ports:
+      - "2181:2181"
+    restart: always
+
+  kafka:
+    image: wurstmeister/kafka:latest
+    container_name: kafka-global
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: host.docker.internal
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-global:2181
+      KAFKA_ADVERTISED_PORT: 9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    restart: always
+
+  # ==========================================
+  # SERVICES CENTRAUX (1 SEUL POUR TOUT LE GROUPE)
+  # ==========================================
+  eureka-server:
+    image: eyaeyahermi/eureka-server:v1.0
+    container_name: eureka-server-global
+    ports:
+      - "8761:8761"
+    restart: always
+
+  config-service:
+    image: eyaeyahermi/config-service:v1.0
+    container_name: config-service-global
+    ports:
+      - "8888:8888"
+    depends_on:
+      - eureka-server
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server-global:8761/eureka/
+      - SPRING_PROFILES_ACTIVE=native
+      - SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS=file:/config-repo
+    volumes:
+      - ./config-repo:/config-repo
+    restart: always
+
+  api-gateway:
+    image: eyaeyahermi/api-gateway:v1.0
+    container_name: api-gateway-global
+    ports:
+      - "8085:8085"
+    depends_on:
+      - config-service
+      - eureka-server
+    environment:
+      - JAVA_TOOL_OPTIONS=-Dspring.config.import=optional:configserver:http://config-service-global:8888 -Deureka.client.service-url.defaultZone=http://eureka-server-global:8761/eureka/ -Dspring.security.oauth2.resourceserver.jwt.issuer-uri=http://keycloak-global:8080/realms/ecommerce -Dspring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://keycloak-global:8080/realms/ecommerce/protocol/openid-connect/certs
+    restart: always
+
+  # ==========================================
+  # MICROSERVICES METIERS DE CHAQUE CAMARADE
+  # ==========================================
+
+  # 1. TRAVAIL DE EYA (Commande)
+  commande-service:
+    image: eyaeyahermi/commande-service:v1.0
+    container_name: commande-service
+    ports:
+      - "8087:8087"
+    restart: always
+    depends_on:
+      - config-service
+      - eureka-server
+      - mysqldb
+      - keycloak
+    environment:
+      - JAVA_TOOL_OPTIONS=-Dspring.config.import=optional:configserver:http://config-service-global:8888 -Deureka.client.service-url.defaultZone=http://eureka-server-global:8761/eureka/ -Dspring.security.oauth2.resourceserver.jwt.issuer-uri=http://keycloak-global:8080/realms/ecommerce -Dspring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://keycloak-global:8080/realms/ecommerce/protocol/openid-connect/certs
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysqldb-global:3306/db_commande?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_SHOW_SQL=true
+
+  # 2. TRAVAIL DE MOHAMED SEDDIK (Product & Stock)
+  product-service:
+    image: mohamedseddikhafidh/product-service:latest
+    container_name: product-service
+    restart: always
+    depends_on:
+      - eureka-server
+      - config-service
+      - kafka
+      - mysqldb
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-service-global:8888
+      - SPRING_CLOUD_CONFIG_URI=http://config-service-global:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server-global:8761/eureka/
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysqldb-global:3306/product_db?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-global:9092
+
+  stock-service:
+    image: mohamedseddikhafidh/stock-service:latest
+    container_name: stock-service
+    restart: always
+    depends_on:
+      - eureka-server
+      - config-service
+      - kafka
+      - mysqldb
+    environment:
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-service-global:8888
+      - SPRING_CLOUD_CONFIG_URI=http://config-service-global:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server-global:8761/eureka/
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysqldb-global:3306/stock_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-global:9092
+
+  # 3. TRAVAIL DE FATMA (User)
+  user-service:
+    image: fatmasboui/user-service-demo:1.0
+    container_name: user-service
+    restart: always
+    depends_on:
+      - eureka-server
+      - config-service
+      - mysqldb
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server-global:8761/eureka/
+      - SPRING_CLOUD_CONFIG_URI=http://config-service-global:8888
+      - SPRING_R2DBC_URL=r2dbc:mysql://mysqldb-global:3306/db_user?createDatabaseIfNotExist=true
+      - SPRING_R2DBC_USERNAME=root
+      - SPRING_R2DBC_PASSWORD=root
+
+  # 4. TRAVAIL DE [CAMARADE] (Livraison)
+  livraison-service:
+    image: mohamedseddikhafidh/livraison-service:latest
+    container_name: livraison-service
+    ports:
+      - "8091:8091"
+    restart: always
+    depends_on:
+      - eureka-server
+      - config-service
+      - mysqldb
+      - keycloak
+    environment:
+      - JAVA_TOOL_OPTIONS=-Dspring.config.import=optional:configserver:http://config-service-global:8888 -Deureka.client.service-url.defaultZone=http://eureka-server-global:8761/eureka/ -Dspring.security.oauth2.resourceserver.jwt.issuer-uri=http://keycloak-global:8080/realms/ecommerce -Dspring.security.oauth2.resourceserver.jwt.jwk-set-uri=http://keycloak-global:8080/realms/ecommerce/protocol/openid-connect/certs -Dserver.port=8091
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysqldb-global:3306/db_livraison?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=root
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - SPRING_JPA_SHOW_SQL=true
+      - INTERNAL_SECRET=mon-secret-interne
+      - WELCOME_MESSAGE=Bienvenue sur le service de livraison !
+
+  # 5. TRAVAIL DE [CAMARADE] (Review - Python)
+  review-service:
+    image: mohamedseddikhafidh/review-service:latest
+    container_name: review-service
+    ports:
+      - "8092:8085"
+    depends_on:
+      - eureka-server
+      - mongo
+    environment:
+      - EUREKA_URL=http://eureka-server-global:8761/eureka/apps/review-service
+      - MONGODB_URL=mongodb://mongo-global:27017/
+      - SERVICE_HOST=review-service
+    volumes:
+      - ./review-main.py:/app/main.py
+    restart: always
+
+volumes:
+  mysql_data:
+  mongo_data:
